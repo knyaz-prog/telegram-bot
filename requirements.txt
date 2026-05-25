@@ -1,0 +1,418 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import telebot
+import random
+import time
+import os
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+scores = {}
+active_games = {}
+quiz_active = {}
+group_members = {}
+
+QUESTIONS = [
+    {"question": "🌍 O'zbekistonning poytaxti?", "options": ["Samarqand", "Toshkent", "Buxoro", "Namangan"], "answer": 1, "points": 10},
+    {"question": "🔢 2 + 2 × 2 = ?", "options": ["8", "6", "4", "10"], "answer": 1, "points": 10},
+    {"question": "🌊 Eng katta okean?", "options": ["Atlantika", "Hind", "Tinch", "Shimoliy Muz"], "answer": 2, "points": 15},
+    {"question": "⚽ FIFA necha yilda bir?", "options": ["2 yilda", "4 yilda", "3 yilda", "5 yilda"], "answer": 1, "points": 10},
+    {"question": "🧪 Suvning formulasi?", "options": ["CO2", "H2O", "O2", "NaCl"], "answer": 1, "points": 10},
+    {"question": "🪐 Eng katta sayyora?", "options": ["Saturn", "Mars", "Yupiter", "Uran"], "answer": 2, "points": 15},
+    {"question": "🏔️ Eng baland tog'?", "options": ["K2", "Everest", "Elbrus", "Kilimanjaro"], "answer": 1, "points": 15},
+    {"question": "🐬 Delfinlar qaysi sinfga kiradi?", "options": ["Baliqlar", "Sudralib yuruvchilar", "Sut emizuvchilar", "Qushlar"], "answer": 2, "points": 15},
+    {"question": "🌐 Internet qachon ixtiro qilingan?", "options": ["1960", "1969", "1975", "1983"], "answer": 1, "points": 20},
+    {"question": "🦅 O'zbekiston davlat ramzi?", "options": ["Sher", "Bo'ri", "Humo qushi", "Burgut"], "answer": 2, "points": 20},
+]
+
+WORD_GAME = [
+    {"word": "KOMPYUTER", "hint": "💻 Raqamli qurilma"},
+    {"word": "TELEFON", "hint": "📱 Muloqot vositasi"},
+    {"word": "KITOB", "hint": "📚 Bilim manbai"},
+    {"word": "MAKTAB", "hint": "🏫 O'quv muassasasi"},
+    {"word": "INTERNET", "hint": "🌐 Global tarmoq"},
+    {"word": "ROBOT", "hint": "🤖 Sun'iy mexanizm"},
+    {"word": "SAMOLYOT", "hint": "✈️ Uchuvchi transport"},
+]
+
+FUN_FACTS = [
+    "🐙 Ahtapotning 3 ta yuragi bor!",
+    "🌙 Oyda 1 kunda 14 sutka o'tadi!",
+    "🍯 Asal hech qachon buzmaydi!",
+    "🐘 Fillar o'zlarini ko'zguda taniydi!",
+    "⚡ Chaqmoq Quyoshdan 5 marta issiqroq!",
+    "🦋 Kapalaklar oyoqlari bilan ta'm biladi!",
+    "🧠 Inson miyasi 86 milliard neyrondan iborat!",
+]
+
+MOTIVATIONS = [
+    "💪 Har qanday qiyinchilik - bu o'sish imkoniyati!",
+    "🌟 Sen qila olasan! Ishon o'zingga!",
+    "🚀 Bugun qilgan harakating, ertangi muvaffaqiyating!",
+    "🏆 G'alaba - bu maqsad emas, yo'l!",
+    "⭐ Kichik qadamlar - katta maqsadlarga olib boradi!",
+]
+
+def get_user_name(user):
+    if user.first_name and user.last_name:
+        return f"{user.first_name} {user.last_name}"
+    elif user.first_name:
+        return user.first_name
+    elif user.username:
+        return f"@{user.username}"
+    return "Noma'lum"
+
+def get_score(user_id):
+    return scores.get(user_id, 0)
+
+def add_score(user_id, points):
+    scores[user_id] = get_score(user_id) + points
+
+def main_menu():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🎮 O'yinlar", callback_data="menu_games"),
+        InlineKeyboardButton("❓ Viktorina", callback_data="quiz_start"),
+    )
+    keyboard.add(
+        InlineKeyboardButton("👥 Hammasini tag", callback_data="tag_all"),
+        InlineKeyboardButton("🏆 Reyting", callback_data="show_rating"),
+    )
+    keyboard.add(
+        InlineKeyboardButton("🎲 Qiziq fakt", callback_data="fun_fact"),
+        InlineKeyboardButton("💪 Motivatsiya", callback_data="motivation"),
+    )
+    keyboard.add(InlineKeyboardButton("ℹ️ Yordam", callback_data="help_menu"))
+    return keyboard
+
+def games_menu():
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        InlineKeyboardButton("🎯 Raqam toping", callback_data="game_number"),
+        InlineKeyboardButton("🔤 So'z toping", callback_data="game_word"),
+    )
+    keyboard.add(
+        InlineKeyboardButton("🎰 Baxt sinovi", callback_data="game_luck"),
+        InlineKeyboardButton("🎲 Zar", callback_data="game_dice"),
+    )
+    keyboard.add(InlineKeyboardButton("⬅️ Orqaga", callback_data="main_menu"))
+    return keyboard
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    if chat_id not in group_members:
+        group_members[chat_id] = {}
+    group_members[chat_id][user_id] = message.from_user
+    user_name = get_user_name(message.from_user)
+    bot.send_message(
+        chat_id,
+        f"🤖 *Salom, {user_name}!*\n\n"
+        f"Men sizning ko'ngilochar botingizman! 🎉\n\n"
+        f"🎮 O'yinlar | ❓ Viktorina\n"
+        f"👥 Tag qilish | 🏆 Reyting\n\n"
+        f"Quyidagi menyudan boshlang! 👇",
+        parse_mode="Markdown",
+        reply_markup=main_menu()
+    )
+
+@bot.message_handler(commands=['tagall'])
+def tag_all_cmd(message):
+    chat_id = message.chat.id
+    if message.chat.type == 'private':
+        bot.reply_to(message, "⚠️ Bu buyruq faqat guruhda ishlaydi!")
+        return
+    do_tag_all(chat_id)
+
+def do_tag_all(chat_id):
+    if chat_id in group_members and group_members[chat_id]:
+        tagged = []
+        for uid, user in group_members[chat_id].items():
+            if user.username:
+                tagged.append(f"@{user.username}")
+            else:
+                tagged.append(f"[{get_user_name(user)}](tg://user?id={uid})")
+        for i in range(0, len(tagged), 20):
+            chunk = tagged[i:i+20]
+            bot.send_message(chat_id, "📢 *Barcha a'zolar:*\n\n" + " ".join(chunk), parse_mode="Markdown")
+            time.sleep(0.5)
+        bot.send_message(chat_id, f"✅ Jami *{len(tagged)}* a'zo tag qilindi!", parse_mode="Markdown")
+    else:
+        bot.send_message(chat_id, "⚠️ A'zolar topilmadi!\n\nA'zolar /start bosganida ro'yxatga olinadi.")
+
+def start_quiz(chat_id, user_id):
+    q = random.choice(QUESTIONS)
+    quiz_active[chat_id] = {"question": q, "user_id": user_id}
+    keyboard = InlineKeyboardMarkup(row_width=2)
+    for i, option in enumerate(q["options"]):
+        keyboard.add(InlineKeyboardButton(f"{['A','B','C','D'][i]}) {option}", callback_data=f"quiz_answer_{i}"))
+    keyboard.add(InlineKeyboardButton("⏭️ Keyingi", callback_data="quiz_start"))
+    keyboard.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+    bot.send_message(chat_id, f"❓ *SAVOL:*\n\n{q['question']}\n\n💰 Ball: *{q['points']}*", parse_mode="Markdown", reply_markup=keyboard)
+
+def start_word_game(chat_id, user_id):
+    wd = random.choice(WORD_GAME)
+    scrambled = list(wd["word"])
+    random.shuffle(scrambled)
+    letter_display = " | ".join(scrambled)
+    active_games[chat_id] = {"type": "word", "answer": wd["word"], "user_id": user_id, "hint": wd["hint"], "attempts": 0}
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("💡 Maslahat", callback_data="word_hint"))
+    keyboard.add(InlineKeyboardButton("⏭️ O'tkazish", callback_data="word_skip"))
+    keyboard.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+    bot.send_message(chat_id, f"🔤 *SO'Z TOPING!*\n\nHarflar: *{letter_display}*\n\nJavobingizni yozing!\n💰 To'g'ri javob: *20 ball*", parse_mode="Markdown", reply_markup=keyboard)
+
+@bot.message_handler(commands=['quiz'])
+def quiz_cmd(message):
+    start_quiz(message.chat.id, message.from_user.id)
+
+@bot.message_handler(commands=['word'])
+def word_cmd(message):
+    start_word_game(message.chat.id, message.from_user.id)
+
+@bot.message_handler(commands=['dice'])
+def dice_cmd(message):
+    bot.send_dice(message.chat.id)
+    val = random.randint(1, 6)
+    add_score(message.from_user.id, val)
+    time.sleep(1)
+    bot.send_message(message.chat.id, f"🎲 Natija: *{val}*\n💰 +*{val} ball*", parse_mode="Markdown")
+
+@bot.message_handler(commands=['luck'])
+def luck_cmd(message):
+    luck = random.randint(1, 100)
+    if luck >= 90: result, points = "🌟 SUPER BAXTLI KUN!", 50
+    elif luck >= 70: result, points = "😊 Baxtli kun!", 20
+    elif luck >= 40: result, points = "😐 O'rtacha kun", 10
+    else: result, points = "😅 Ehtiyot bo'ling...", 5
+    add_score(message.from_user.id, points)
+    bar = "█" * (luck // 10) + "░" * (10 - luck // 10)
+    bot.send_message(message.chat.id, f"🎰 *BAXT SINOVI*\n\nBaxt: *{luck}%*\n[{bar}]\n\n{result}\n💰 +*{points} ball*", parse_mode="Markdown")
+
+@bot.message_handler(commands=['fact'])
+def fact_cmd(message):
+    bot.send_message(message.chat.id, f"🧠 *BILASIZMI?*\n\n{random.choice(FUN_FACTS)}", parse_mode="Markdown")
+
+@bot.message_handler(commands=['motivation'])
+def motivation_cmd(message):
+    bot.send_message(message.chat.id, f"💫 *MOTIVATSIYA:*\n\n{random.choice(MOTIVATIONS)}", parse_mode="Markdown")
+
+@bot.message_handler(commands=['score'])
+def score_cmd(message):
+    s = get_score(message.from_user.id)
+    bot.send_message(message.chat.id, f"🎯 *Baling:* {s} ball", parse_mode="Markdown")
+
+@bot.message_handler(commands=['rating'])
+def rating_cmd(message):
+    if not scores:
+        bot.send_message(message.chat.id, "📊 Hali hech kim o'ynamagan!")
+        return
+    sorted_s = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    text = "🏆 *REYTING:*\n\n"
+    medals = ["🥇", "🥈", "🥉"]
+    for i, (uid, sc) in enumerate(sorted_s[:10], 1):
+        m = medals[i-1] if i <= 3 else f"#{i}"
+        text += f"{m} {sc} ball\n"
+    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+
+@bot.message_handler(commands=['joke'])
+def joke_cmd(message):
+    jokes = [
+        "😄 Dasturchi: 'Bug fix qilaman'\nDo'sti: 'Qaysi bug?'\nDasturchi: 'Hali bilmayman!'",
+        "😂 Muallim: '5 olmadan 3 tasini bersang nechta qoladi?'\nO'quvchi: '5 ta - men bermayman!'",
+        "🤣 Wifi parolini unutib qo'shniga bordi:\n'Parol nima?' - '12345678'\n'Ha bilaman, lekin aniq nima?'",
+    ]
+    bot.send_message(message.chat.id, f"😄 *KULGI:*\n\n{random.choice(jokes)}", parse_mode="Markdown")
+
+@bot.message_handler(commands=['menu'])
+def menu_cmd(message):
+    bot.send_message(message.chat.id, "🏠 *Asosiy Menyu*", parse_mode="Markdown", reply_markup=main_menu())
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callback(call):
+    chat_id = call.message.chat.id
+    user_id = call.from_user.id
+    data = call.data
+    if chat_id not in group_members:
+        group_members[chat_id] = {}
+    group_members[chat_id][user_id] = call.from_user
+
+    if data == "main_menu":
+        bot.edit_message_text("🏠 *Asosiy Menyu*\n\nNimani tanlaysiz?", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=main_menu())
+    elif data == "menu_games":
+        bot.edit_message_text("🎮 *O'YINLAR*\n\nQaysi o'yinni tanlaysiz?", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=games_menu())
+    elif data == "quiz_start":
+        bot.delete_message(chat_id, call.message.message_id)
+        start_quiz(chat_id, user_id)
+    elif data.startswith("quiz_answer_"):
+        answer_idx = int(data.split("_")[-1])
+        if chat_id not in quiz_active:
+            bot.answer_callback_query(call.id, "⏰ Savol muddati o'tdi!")
+            return
+        qd = quiz_active[chat_id]
+        correct = qd["question"]["answer"]
+        bot.delete_message(chat_id, call.message.message_id)
+        if answer_idx == correct:
+            points = qd["question"]["points"]
+            add_score(user_id, points)
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton("➡️ Keyingi", callback_data="quiz_start"))
+            kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+            bot.send_message(chat_id, f"✅ *TO'G'RI!*\n\n💰 +*{points} ball*\n🏆 Jami: *{get_score(user_id)}*", parse_mode="Markdown", reply_markup=kb)
+        else:
+            correct_ans = qd["question"]["options"][correct]
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton("🔄 Qayta", callback_data="quiz_start"))
+            kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+            bot.send_message(chat_id, f"❌ *NOTO'G'RI!*\n\n✅ To'g'ri: *{correct_ans}*", parse_mode="Markdown", reply_markup=kb)
+        del quiz_active[chat_id]
+    elif data == "quiz_skip":
+        bot.delete_message(chat_id, call.message.message_id)
+        if chat_id in quiz_active:
+            del quiz_active[chat_id]
+        start_quiz(chat_id, user_id)
+    elif data == "game_word":
+        bot.delete_message(chat_id, call.message.message_id)
+        start_word_game(chat_id, user_id)
+    elif data == "word_hint":
+        if chat_id in active_games:
+            g = active_games[chat_id]
+            bot.answer_callback_query(call.id, f"💡 {g['hint']}\n🔤 Birinchi harf: {g['answer'][0]}", show_alert=True)
+    elif data == "word_skip":
+        answer = active_games[chat_id]["answer"] if chat_id in active_games else "?"
+        if chat_id in active_games:
+            del active_games[chat_id]
+        bot.delete_message(chat_id, call.message.message_id)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔤 Yangi so'z", callback_data="game_word"))
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.send_message(chat_id, f"⏭️ O'tkazildi!\n✅ So'z: *{answer}*", parse_mode="Markdown", reply_markup=kb)
+    elif data == "game_luck":
+        bot.delete_message(chat_id, call.message.message_id)
+        luck = random.randint(1, 100)
+        if luck >= 90: result, points = "🌟 SUPER BAXTLI!", 50
+        elif luck >= 70: result, points = "😊 Baxtli kun!", 20
+        elif luck >= 40: result, points = "😐 O'rtacha", 10
+        else: result, points = "😅 Ehtiyot bo'ling", 5
+        add_score(user_id, points)
+        bar = "█" * (luck // 10) + "░" * (10 - luck // 10)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔄 Qayta", callback_data="game_luck"))
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.send_message(chat_id, f"🎰 *BAXT SINOVI*\n\nBaxt: *{luck}%*\n[{bar}]\n\n{result}\n💰 +*{points} ball*", parse_mode="Markdown", reply_markup=kb)
+    elif data == "game_dice":
+        bot.delete_message(chat_id, call.message.message_id)
+        bot.send_dice(chat_id)
+        val = random.randint(1, 6)
+        add_score(user_id, val)
+        time.sleep(1)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🎲 Yana", callback_data="game_dice"))
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.send_message(chat_id, f"🎲 Natija: *{val}*\n💰 +*{val} ball*", parse_mode="Markdown", reply_markup=kb)
+    elif data == "game_number":
+        bot.delete_message(chat_id, call.message.message_id)
+        active_games[chat_id] = {"type": "number", "answer": random.randint(1, 100), "user_id": user_id, "attempts": 0}
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.send_message(chat_id, "🎯 *RAQAM TOPING!*\n\n1 dan 100 gacha raqam o'yladim!\nJavobingizni yozing!\n\n💰 Kamroq urinish = Ko'proq ball!", parse_mode="Markdown", reply_markup=kb)
+    elif data == "show_rating":
+        if not scores:
+            bot.answer_callback_query(call.id, "Hali hech kim o'ynamagan!")
+        else:
+            sorted_s = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+            text = "🏆 *REYTING:*\n\n"
+            medals = ["🥇", "🥈", "🥉"]
+            for i, (uid, sc) in enumerate(sorted_s[:10], 1):
+                m = medals[i-1] if i <= 3 else f"#{i}"
+                text += f"{m} {sc} ball\n"
+            bot.send_message(chat_id, text, parse_mode="Markdown")
+    elif data == "tag_all":
+        bot.answer_callback_query(call.id, "🏷️ Tag qilinmoqda...")
+        do_tag_all(chat_id)
+    elif data == "fun_fact":
+        fact = random.choice(FUN_FACTS)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔄 Boshqa fakt", callback_data="fun_fact"))
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.edit_message_text(f"🧠 *BILASIZMI?*\n\n{fact}", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=kb)
+    elif data == "motivation":
+        mot = random.choice(MOTIVATIONS)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🔄 Boshqa", callback_data="motivation"))
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.edit_message_text(f"💫 *MOTIVATSIYA:*\n\n{mot}", chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=kb)
+    elif data == "help_menu":
+        text = "📖 *BUYRUQLAR:*\n\n🎮 /quiz\n🔤 /word\n🎲 /dice\n🎰 /luck\n🏷️ /tagall\n🏆 /rating\n🎯 /score\n🧠 /fact\n💪 /motivation\n😄 /joke"
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+        bot.edit_message_text(text, chat_id, call.message.message_id, parse_mode="Markdown", reply_markup=kb)
+
+    bot.answer_callback_query(call.id)
+
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+    chat_id = message.chat.id
+    user_id = message.from_user.id
+    text = message.text.upper().strip()
+    if chat_id not in group_members:
+        group_members[chat_id] = {}
+    group_members[chat_id][user_id] = message.from_user
+
+    if chat_id in active_games and active_games[chat_id]["type"] == "word":
+        game = active_games[chat_id]
+        game["attempts"] += 1
+        if text == game["answer"]:
+            points = max(20 - (game["attempts"] - 1) * 3, 5)
+            add_score(user_id, points)
+            del active_games[chat_id]
+            kb = InlineKeyboardMarkup()
+            kb.add(InlineKeyboardButton("🔤 Yangi so'z", callback_data="game_word"))
+            kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+            bot.send_message(chat_id, f"✅ *TO'G'RI!*\n\nSo'z: *{game['answer']}*\nUrinish: *{game['attempts']}*\n💰 +*{points} ball*", parse_mode="Markdown", reply_markup=kb)
+        else:
+            bot.reply_to(message, f"❌ Noto'g'ri! ({game['attempts']}-urinish)")
+        return
+
+    if chat_id in active_games and active_games[chat_id]["type"] == "number":
+        game = active_games[chat_id]
+        try:
+            guess = int(message.text)
+            game["attempts"] += 1
+            answer = game["answer"]
+            if guess == answer:
+                points = max(50 - (game["attempts"] - 1) * 5, 5)
+                add_score(user_id, points)
+                del active_games[chat_id]
+                kb = InlineKeyboardMarkup()
+                kb.add(InlineKeyboardButton("🎯 Yangi o'yin", callback_data="game_number"))
+                kb.add(InlineKeyboardButton("🏠 Menyu", callback_data="main_menu"))
+                bot.send_message(chat_id, f"🎉 *TOPDING!*\n\nRaqam: *{answer}*\nUrinish: *{game['attempts']}*\n💰 +*{points} ball*", parse_mode="Markdown", reply_markup=kb)
+            elif guess < answer:
+                bot.reply_to(message, f"⬆️ Ko'proq! ({game['attempts']}-urinish)")
+            else:
+                bot.reply_to(message, f"⬇️ Kamroq! ({game['attempts']}-urinish)")
+        except ValueError:
+            bot.reply_to(message, "🔢 Faqat raqam yozing!")
+        return
+
+    greetings = ["salom", "assalom", "hello", "hi", "hey"]
+    if any(g in message.text.lower() for g in greetings):
+        user_name = get_user_name(message.from_user)
+        kb = InlineKeyboardMarkup()
+        kb.add(InlineKeyboardButton("🏠 Menyuni ko'rish", callback_data="main_menu"))
+        bot.send_message(chat_id, f"👋 Salom, {user_name}! Bugun nima o'ynaymiz? 😊", reply_markup=kb)
+
+if __name__ == "__main__":
+    print("🤖 BOT ISHGA TUSHDI!")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            print(f"Xato: {e}")
+            time.sleep(5)
